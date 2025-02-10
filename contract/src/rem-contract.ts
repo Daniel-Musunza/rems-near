@@ -48,61 +48,6 @@
 //     agreements: Map<string, RentAgreement> = new Map();
 //     tenantRiskScores: Map<string, number> = new Map();
 
-//     @call({})
-//     createAgreement(id: string, propertyId: string, roomId: string, tenantId: string, landlordId: string, startDate: string, endDate: string, monthlyRent: bigint, paymentDueDate: string, securityDeposit: bigint): void {
-//         if (this.agreements.has(id)) {
-//             throw new Error("Agreement ID already exists.");
-//         }
-//         const agreement = new RentAgreement(id, propertyId, roomId, tenantId, landlordId, startDate, endDate, monthlyRent, paymentDueDate, securityDeposit);
-//         this.agreements.set(id, agreement);
-//     }
-
-//     @view({})
-//     getAgreement(id: string): RentAgreement | null {
-//         return this.agreements.get(id) || null;
-//     }
-
-//     @call({})
-//     payRent(agreementId: string): void {
-//         const agreement = this.agreements.get(agreementId);
-//         if (!agreement || agreement.status !== "Active") {
-//             throw new Error("Agreement is not active.");
-//         }
-//         if (near.attachedDeposit() !== agreement.monthlyRent) {
-//             throw new Error("Incorrect rent amount.");
-//         }
-//         near.promiseBatchCreate(agreement.landlordId).transfer(agreement.monthlyRent);
-//     }
-
-//     @call({})
-//     paySecurityDeposit(agreementId: string): void {
-//         const agreement = this.agreements.get(agreementId);
-//         if (!agreement || near.attachedDeposit() !== agreement.securityDeposit) {
-//             throw new Error("Incorrect deposit amount.");
-//         }
-//     }
-
-//     @call({})
-//     refundDeposit(agreementId: string): void {
-//         const agreement = this.agreements.get(agreementId);
-//         if (!agreement || (agreement.status !== "Completed" && agreement.status !== "Terminated")) {
-//             throw new Error("Agreement must be completed or terminated.");
-//         }
-//         if (near.signerAccountId() !== agreement.landlordId) {
-//             throw new Error("Only the landlord can approve refunds.");
-//         }
-//         near.promiseBatchCreate(agreement.tenantId).transfer(agreement.securityDeposit);
-//     }
-
-//     @call({})
-//     terminateAgreement(agreementId: string): void {
-//         const agreement = this.agreements.get(agreementId);
-//         if (!agreement || near.signerAccountId() !== agreement.landlordId) {
-//             throw new Error("Only the landlord can terminate.");
-//         }
-//         agreement.status = "Terminated";
-//         this.agreements.set(agreementId, agreement);
-//     }
 
 //     // AI-Based Tenant Risk Assessment
 //     @call({})
