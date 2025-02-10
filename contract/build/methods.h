@@ -1,0 +1,2 @@
+DEFINE_NEAR_METHOD(get_agreements)
+DEFINE_NEAR_METHOD(set_agreement)
