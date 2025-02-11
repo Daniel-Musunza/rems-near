@@ -1,2 +1,6 @@
 DEFINE_NEAR_METHOD(get_agreements)
+DEFINE_NEAR_METHOD(payRent)
+DEFINE_NEAR_METHOD(paySecurityDeposit)
+DEFINE_NEAR_METHOD(refundDeposit)
 DEFINE_NEAR_METHOD(set_agreement)
+DEFINE_NEAR_METHOD(terminateAgreement)

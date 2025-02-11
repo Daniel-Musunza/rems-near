@@ -2393,6 +2393,14 @@ function log(...params) {
   }, ""));
 }
 /**
+ * Returns the account ID of the account that signed the transaction.
+ * Can only be called in a call or initialize function.
+ */
+function signerAccountId() {
+  env.signer_account_id(0);
+  return str(env.read_register(0));
+}
+/**
  * Returns the account ID of the account that called the function.
  * Can only be called in a call or initialize function.
  */
@@ -2447,6 +2455,23 @@ function inputRaw() {
  */
 function input() {
   return decode(inputRaw());
+}
+/**
+ * Create a NEAR promise which will have multiple promise actions inside.
+ *
+ * @param accountId - The account ID of the target contract.
+ */
+function promiseBatchCreate(accountId) {
+  return env.promise_batch_create(accountId);
+}
+/**
+ * Attach a transfer promise action to the NEAR promise index with the provided promise index.
+ *
+ * @param promiseIndex - The index of the promise to attach a transfer action to.
+ * @param amount - The amount of NEAR to transfer.
+ */
+function promiseBatchActionTransfer(promiseIndex, amount) {
+  env.promise_batch_action_transfer(promiseIndex, amount);
 }
 
 /**
@@ -2529,8 +2554,8 @@ function NearBindgen({
   };
 }
 
-var _dec, _dec2, _dec3, _class, _class2;
-let RentAgreement = (_dec = NearBindgen({}), _dec2 = view(), _dec3 = call({}), _dec(_class = (_class2 = class RentAgreement {
+var _dec, _dec2, _dec3, _dec4, _dec5, _dec6, _dec7, _class, _class2;
+let RentAgreement = (_dec = NearBindgen({}), _dec2 = view(), _dec3 = call({}), _dec4 = call({}), _dec5 = call({}), _dec6 = call({}), _dec7 = call({}), _dec(_class = (_class2 = class RentAgreement {
   agreements = []; // Initialize the array
 
   get_agreements() {
@@ -2542,7 +2567,132 @@ let RentAgreement = (_dec = NearBindgen({}), _dec2 = view(), _dec3 = call({}), _
     log(`Saving agreement: ${JSON.stringify(agreement)}`);
     this.agreements.push(agreement); // Correctly pushing the new agreement
   }
-}, _applyDecoratedDescriptor(_class2.prototype, "get_agreements", [_dec2], Object.getOwnPropertyDescriptor(_class2.prototype, "get_agreements"), _class2.prototype), _applyDecoratedDescriptor(_class2.prototype, "set_agreement", [_dec3], Object.getOwnPropertyDescriptor(_class2.prototype, "set_agreement"), _class2.prototype), _class2)) || _class);
+  paySecurityDeposit({
+    agreementId
+  }) {
+    const agreement = this.agreements.find(a => a.id === agreementId);
+    if (!agreement) {
+      throw new Error("Agreement not found.");
+    }
+    const depositAmount = BigInt(agreement.securityDeposit); // Convert to BigInt
+    const attachedDeposit$1 = attachedDeposit();
+    if (attachedDeposit$1 !== depositAmount) {
+      throw new Error("Incorrect deposit amount.");
+    }
+    log(`Security deposit of ${depositAmount} yoctoNEAR paid for agreement ${agreementId}`);
+  }
+  payRent({
+    agreementId
+  }) {
+    const agreement = this.agreements.find(a => a.id === agreementId);
+    if (!agreement || agreement.status !== "Active") {
+      throw new Error("Agreement is not active.");
+    }
+    const rentAmount = BigInt(agreement.monthlyRent); // Convert to BigInt
+    const attachedDeposit$1 = attachedDeposit(); // Get attached NEAR deposit
+
+    if (attachedDeposit$1 !== rentAmount) {
+      throw new Error("Incorrect rent amount.");
+    }
+
+    // Transfer rent to landlord
+    const promise = promiseBatchCreate(agreement.landlordId);
+    promiseBatchActionTransfer(promise, rentAmount);
+    log(`Rent of ${rentAmount} yoctoNEAR paid to ${agreement.landlordId} for agreement ${agreementId}`);
+  }
+  terminateAgreement({
+    agreementId
+  }) {
+    const index = this.agreements.findIndex(a => a.id === agreementId);
+    if (index === -1) {
+      throw new Error("Agreement not found.");
+    }
+    const agreement = this.agreements[index];
+    if (signerAccountId() !== agreement.landlordId) {
+      throw new Error("Only the landlord can terminate.");
+    }
+    agreement.status = "Terminated";
+    this.agreements[index] = agreement; // Update the array correctly
+
+    log(`Agreement ${agreementId} has been terminated.`);
+  }
+  refundDeposit({
+    agreementId
+  }) {
+    const agreement = this.agreements.find(a => a.id === agreementId);
+    if (!agreement) {
+      throw new Error("Agreement not found.");
+    }
+    if (agreement.status !== "Completed" && agreement.status !== "Terminated") {
+      throw new Error("Agreement must be completed or terminated.");
+    }
+    if (signerAccountId() !== agreement.landlordId) {
+      throw new Error("Only the landlord can approve refunds.");
+    }
+    const depositAmount = BigInt(agreement.securityDeposit);
+
+    // Transfer deposit back to tenant
+    const promise = promiseBatchCreate(agreement.tenantId);
+    promiseBatchActionTransfer(promise, depositAmount);
+    log(`Refunded security deposit of ${depositAmount} yoctoNEAR to ${agreement.tenantId}`);
+  }
+}, _applyDecoratedDescriptor(_class2.prototype, "get_agreements", [_dec2], Object.getOwnPropertyDescriptor(_class2.prototype, "get_agreements"), _class2.prototype), _applyDecoratedDescriptor(_class2.prototype, "set_agreement", [_dec3], Object.getOwnPropertyDescriptor(_class2.prototype, "set_agreement"), _class2.prototype), _applyDecoratedDescriptor(_class2.prototype, "paySecurityDeposit", [_dec4], Object.getOwnPropertyDescriptor(_class2.prototype, "paySecurityDeposit"), _class2.prototype), _applyDecoratedDescriptor(_class2.prototype, "payRent", [_dec5], Object.getOwnPropertyDescriptor(_class2.prototype, "payRent"), _class2.prototype), _applyDecoratedDescriptor(_class2.prototype, "terminateAgreement", [_dec6], Object.getOwnPropertyDescriptor(_class2.prototype, "terminateAgreement"), _class2.prototype), _applyDecoratedDescriptor(_class2.prototype, "refundDeposit", [_dec7], Object.getOwnPropertyDescriptor(_class2.prototype, "refundDeposit"), _class2.prototype), _class2)) || _class);
+function refundDeposit() {
+  const _state = RentAgreement._getState();
+  if (!_state && RentAgreement._requireInit()) {
+    throw new Error("Contract must be initialized");
+  }
+  const _contract = RentAgreement._create();
+  if (_state) {
+    RentAgreement._reconstruct(_contract, _state);
+  }
+  const _args = RentAgreement._getArgs();
+  const _result = _contract.refundDeposit(_args);
+  RentAgreement._saveToStorage(_contract);
+  if (_result !== undefined) if (_result && _result.constructor && _result.constructor.name === "NearPromise") _result.onReturn();else env.value_return(RentAgreement._serialize(_result, true));
+}
+function terminateAgreement() {
+  const _state = RentAgreement._getState();
+  if (!_state && RentAgreement._requireInit()) {
+    throw new Error("Contract must be initialized");
+  }
+  const _contract = RentAgreement._create();
+  if (_state) {
+    RentAgreement._reconstruct(_contract, _state);
+  }
+  const _args = RentAgreement._getArgs();
+  const _result = _contract.terminateAgreement(_args);
+  RentAgreement._saveToStorage(_contract);
+  if (_result !== undefined) if (_result && _result.constructor && _result.constructor.name === "NearPromise") _result.onReturn();else env.value_return(RentAgreement._serialize(_result, true));
+}
+function payRent() {
+  const _state = RentAgreement._getState();
+  if (!_state && RentAgreement._requireInit()) {
+    throw new Error("Contract must be initialized");
+  }
+  const _contract = RentAgreement._create();
+  if (_state) {
+    RentAgreement._reconstruct(_contract, _state);
+  }
+  const _args = RentAgreement._getArgs();
+  const _result = _contract.payRent(_args);
+  RentAgreement._saveToStorage(_contract);
+  if (_result !== undefined) if (_result && _result.constructor && _result.constructor.name === "NearPromise") _result.onReturn();else env.value_return(RentAgreement._serialize(_result, true));
+}
+function paySecurityDeposit() {
+  const _state = RentAgreement._getState();
+  if (!_state && RentAgreement._requireInit()) {
+    throw new Error("Contract must be initialized");
+  }
+  const _contract = RentAgreement._create();
+  if (_state) {
+    RentAgreement._reconstruct(_contract, _state);
+  }
+  const _args = RentAgreement._getArgs();
+  const _result = _contract.paySecurityDeposit(_args);
+  RentAgreement._saveToStorage(_contract);
+  if (_result !== undefined) if (_result && _result.constructor && _result.constructor.name === "NearPromise") _result.onReturn();else env.value_return(RentAgreement._serialize(_result, true));
+}
 function set_agreement() {
   const _state = RentAgreement._getState();
   if (!_state && RentAgreement._requireInit()) {
@@ -2571,5 +2721,5 @@ function get_agreements() {
   if (_result !== undefined) if (_result && _result.constructor && _result.constructor.name === "NearPromise") _result.onReturn();else env.value_return(RentAgreement._serialize(_result, true));
 }
 
-export { get_agreements, set_agreement };
+export { get_agreements, payRent, paySecurityDeposit, refundDeposit, set_agreement, terminateAgreement };
 //# sourceMappingURL=rems_near.js.map

@@ -49,7 +49,7 @@ near deploy threecommas.testnet build/rems-near.wasm
 <br />
 
 
-## 3. Retrieve the Greeting
+## 3. Retrieve the agreements
 
 `get_agreements` is a read-only method (aka `view` method).
 
@@ -62,8 +62,8 @@ near view threecommas.testnet get_agreements
 
 <br />
 
-## 4. Store a New Greeting
-`set_greeting` changes the contract's state, for which it is a `call` method.
+## 4. Store a New agreement
+`set_agreement` changes the contract's state, for which it is a `call` method.
 
 `Call` methods can only be invoked using a NEAR account, since the account needs to pay GAS for the transaction.
 
