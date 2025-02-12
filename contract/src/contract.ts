@@ -85,17 +85,29 @@ class RentAgreement {
     }
 
     const rentAmount = BigInt(agreement.monthlyRent); // Convert to BigInt
-    const attachedDeposit = near.attachedDeposit(); // Get attached NEAR deposit
+    
+    let tenant_id = near.predecessorAccountId();
+    let payAmount: bigint = near.attachedDeposit() as bigint;
 
-    if (attachedDeposit !== rentAmount) {
-      throw new Error("Incorrect rent amount.");
+    let total_payments = this.payments.get(tenant_id, { defaultValue: BigInt(0) })
+    let toTransfer = payAmount;
+
+    if (total_payments == BigInt(0)) {
+      assert(depositAmount > amount, `Attach at least ${rentAmount} yoctoNEAR`);
+
+      // Subtract the storage cost to the amount to transfer
+      toTransfer -= rentAmount
     }
 
-    // Transfer rent to landlord
-    const promise = near.promiseBatchCreate(agreement.landlordId);
-    near.promiseBatchActionTransfer(promise, rentAmount);
+    total_payments += payAmount
+    this.payments.set(tenant_id, total_payments)
+    const attachedDeposit = near.attachedDeposit(); // Get attached NEAR deposit
+    
+    near.log(`Rent of ${payAmount} yoctoNEAR paid to ${agreement.landlordId} for agreement ${agreementId}`);
 
-    near.log(`Rent of ${rentAmount} yoctoNEAR paid to ${agreement.landlordId} for agreement ${agreementId}`);
+     const promise = near.promiseBatchCreate(this.landlord_id)
+    near.promiseBatchActionTransfer(promise, toTransfer)
+
   }
 
   @call({})
@@ -132,13 +144,28 @@ class RentAgreement {
       throw new Error("Only the landlord can approve refunds.");
     }
 
-    const depositAmount = BigInt(agreement.securityDeposit);
+  const amount = BigInt(agreement.securityDeposit); // Convert to BigInt
 
-    // Transfer deposit back to tenant
-    const promise = near.promiseBatchCreate(agreement.tenantId);
-    near.promiseBatchActionTransfer(promise, depositAmount);
+    let landlord_id = near.predecessorAccountId();
+    let depositAmount: bigint = near.attachedDeposit() as bigint;
+
+    let total_deposits = this.rent_deposits.get(agreement.tenantId, { defaultValue: BigInt(0) })
+    let toTransfer = depositAmount;
+
+    if (total_deposits == BigInt(0)) {
+      assert(depositAmount > amount, `Attach at least ${amount} yoctoNEAR`);
+
+      // Subtract the storage cost to the amount to transfer
+      toTransfer -= amount
+    }
+
+    total_deposits += depositAmount
+    this.rent_deposits.set(landlord_id, total_deposits)
+
 
     near.log(`Refunded security deposit of ${depositAmount} yoctoNEAR to ${agreement.tenantId}`);
+      const promise = near.promiseBatchCreate(agreement.tenantId)
+    near.promiseBatchActionTransfer(promise, toTransfer)
   }
 
 }
