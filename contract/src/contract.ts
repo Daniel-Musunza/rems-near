@@ -1,5 +1,5 @@
 // Find all our documentation at https://docs.near.org
-import { NearBindgen, near, call, view } from 'near-sdk-js';
+import { NearBindgen, near, call, view, initialize, UnorderedMap, assert } from 'near-sdk-js';
 
 interface Agreement {
   id: string;
@@ -18,7 +18,21 @@ interface Agreement {
 @NearBindgen({})
 class RentAgreement {
   agreements: Agreement[] = []; // Initialize the array
+  landlord_id: string = "";
+  payments = new UnorderedMap<bigint>('uid-1');
+  rent_deposits = new UnorderedMap<bigint>('uid-1');
 
+  static schema = {
+    landlord_id: "string",
+    payments: { class: UnorderedMap, value: "bigint" },
+    rent_deposits: { class: UnorderedMap, value: "bigint" }
+  }
+
+  @initialize({ privateFunction: true })
+  init({ landlord_id }: { landlord_id: string }) {
+    this.landlord_id = landlord_id
+  }
+  
   @view({})
   get_agreements(): string {
     return JSON.stringify(this.agreements); // Proper serialization
@@ -30,24 +44,40 @@ class RentAgreement {
     this.agreements.push(agreement); // Correctly pushing the new agreement
   }
 
-  @call({})
-  paySecurityDeposit({ agreementId }: { agreementId: string }): void {
+  @call ({ payableFunction: true })
+  pay_security_deposit({ agreementId }: { agreementId: string }): void {
     const agreement = this.agreements.find((a) => a.id === agreementId);
     if (!agreement) {
       throw new Error("Agreement not found.");
     }
 
-    const depositAmount = BigInt(agreement.securityDeposit); // Convert to BigInt
-    const attachedDeposit = near.attachedDeposit();
+    const amount = BigInt(agreement.securityDeposit); // Convert to BigInt
 
-    if (attachedDeposit !== depositAmount) {
-      throw new Error("Incorrect deposit amount.");
+    let tenant_id = near.predecessorAccountId();
+    let depositAmount: bigint = near.attachedDeposit() as bigint;
+
+    let total_deposits = this.rent_deposits.get(tenant_id, { defaultValue: BigInt(0) })
+    let toTransfer = depositAmount;
+
+    if (total_deposits == BigInt(0)) {
+      assert(depositAmount > amount, `Attach at least ${amount} yoctoNEAR`);
+
+      // Subtract the storage cost to the amount to transfer
+      toTransfer -= amount
     }
 
-    near.log(`Security deposit of ${depositAmount} yoctoNEAR paid for agreement ${agreementId}`);
+    total_deposits += depositAmount
+    this.rent_deposits.set(tenant_id, total_deposits)
+
+    near.log(`Security deposit of ${depositAmount} yoctoNEAR paid for agreement ${agreementId}. total deposits add up to ${total_deposits}`);
+
+    const promise = near.promiseBatchCreate(this.landlord_id)
+    near.promiseBatchActionTransfer(promise, toTransfer)
+
+    // return total_deposits.toString()
   }
 
-  @call({})
+  @call({ payableFunction: true })
   payRent({ agreementId }: { agreementId: string }): void {
     const agreement = this.agreements.find((a) => a.id === agreementId);
     if (!agreement || agreement.status !== "Active") {
@@ -87,7 +117,7 @@ class RentAgreement {
     near.log(`Agreement ${agreementId} has been terminated.`);
   }
 
-  @call({})
+  @call({ payableFunction: true })
   refundDeposit({ agreementId }: { agreementId: string }): void {
     const agreement = this.agreements.find((a) => a.id === agreementId);
     if (!agreement) {
