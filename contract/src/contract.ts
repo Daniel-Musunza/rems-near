@@ -78,7 +78,7 @@ class RentAgreement {
   }
 
   @call({ payableFunction: true })
-  payRent({ agreementId }: { agreementId: string }): void {
+  pay_rent({ agreementId }: { agreementId: string }): void {
     const agreement = this.agreements.find((a) => a.id === agreementId);
     if (!agreement || agreement.status !== "Active") {
       throw new Error("Agreement is not active.");
@@ -93,7 +93,7 @@ class RentAgreement {
     let toTransfer = payAmount;
 
     if (total_payments == BigInt(0)) {
-      assert(depositAmount > amount, `Attach at least ${rentAmount} yoctoNEAR`);
+      assert(payAmount > rentAmount, `Attach at least ${rentAmount} yoctoNEAR`);
 
       // Subtract the storage cost to the amount to transfer
       toTransfer -= rentAmount
@@ -101,7 +101,6 @@ class RentAgreement {
 
     total_payments += payAmount
     this.payments.set(tenant_id, total_payments)
-    const attachedDeposit = near.attachedDeposit(); // Get attached NEAR deposit
     
     near.log(`Rent of ${payAmount} yoctoNEAR paid to ${agreement.landlordId} for agreement ${agreementId}`);
 
@@ -111,7 +110,7 @@ class RentAgreement {
   }
 
   @call({})
-  terminateAgreement({ agreementId }: { agreementId: string }): void {
+  terminate_agreement({ agreementId }: { agreementId: string }): void {
     const index = this.agreements.findIndex((a) => a.id === agreementId);
     if (index === -1) {
       throw new Error("Agreement not found.");
@@ -130,7 +129,7 @@ class RentAgreement {
   }
 
   @call({ payableFunction: true })
-  refundDeposit({ agreementId }: { agreementId: string }): void {
+  refund_deposit({ agreementId }: { agreementId: string }): void {
     const agreement = this.agreements.find((a) => a.id === agreementId);
     if (!agreement) {
       throw new Error("Agreement not found.");

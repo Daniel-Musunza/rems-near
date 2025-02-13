@@ -19,8 +19,8 @@ var root = freeGlobal$1 || freeSelf || Function('return this')();
 var root$1 = root;
 
 /** Built-in value references. */
-var Symbol = root$1.Symbol;
-var Symbol$1 = Symbol;
+var Symbol$1 = root$1.Symbol;
+var Symbol$2 = Symbol$1;
 
 /** Used for built-in method references. */
 var objectProto$c = Object.prototype;
@@ -36,7 +36,7 @@ var hasOwnProperty$9 = objectProto$c.hasOwnProperty;
 var nativeObjectToString$1 = objectProto$c.toString;
 
 /** Built-in value references. */
-var symToStringTag$1 = Symbol$1 ? Symbol$1.toStringTag : undefined;
+var symToStringTag$1 = Symbol$2 ? Symbol$2.toStringTag : undefined;
 
 /**
  * A specialized version of `baseGetTag` which ignores `Symbol.toStringTag` values.
@@ -89,7 +89,7 @@ var nullTag = '[object Null]',
   undefinedTag = '[object Undefined]';
 
 /** Built-in value references. */
-var symToStringTag = Symbol$1 ? Symbol$1.toStringTag : undefined;
+var symToStringTag = Symbol$2 ? Symbol$2.toStringTag : undefined;
 
 /**
  * The base implementation of `getTag` without fallbacks for buggy environments.
@@ -1838,8 +1838,8 @@ function initCloneArray(array) {
 }
 
 /** Built-in value references. */
-var Uint8Array = root$1.Uint8Array;
-var Uint8Array$1 = Uint8Array;
+var Uint8Array$1 = root$1.Uint8Array;
+var Uint8Array$2 = Uint8Array$1;
 
 /**
  * Creates a clone of `arrayBuffer`.
@@ -1850,7 +1850,7 @@ var Uint8Array$1 = Uint8Array;
  */
 function cloneArrayBuffer(arrayBuffer) {
   var result = new arrayBuffer.constructor(arrayBuffer.byteLength);
-  new Uint8Array$1(result).set(new Uint8Array$1(arrayBuffer));
+  new Uint8Array$2(result).set(new Uint8Array$2(arrayBuffer));
   return result;
 }
 
@@ -1884,7 +1884,7 @@ function cloneRegExp(regexp) {
 }
 
 /** Used to convert symbols to primitives and strings. */
-var symbolProto = Symbol$1 ? Symbol$1.prototype : undefined,
+var symbolProto = Symbol$2 ? Symbol$2.prototype : undefined,
   symbolValueOf = symbolProto ? symbolProto.valueOf : undefined;
 
 /**
@@ -2216,6 +2216,90 @@ var TypeBrand;
   TypeBrand["BIGINT"] = "bigint";
   TypeBrand["DATE"] = "date";
 })(TypeBrand || (TypeBrand = {}));
+const ERR_INCONSISTENT_STATE = "The collection is an inconsistent state. Did previous smart contract execution terminate unexpectedly?";
+const ERR_INDEX_OUT_OF_BOUNDS = "Index out of bounds";
+/**
+ * Asserts that the expression passed to the function is truthy, otherwise throws a new Error with the provided message.
+ *
+ * @param expression - The expression to be asserted.
+ * @param message - The error message to be printed.
+ */
+function assert(expression, message) {
+  if (!expression) {
+    throw new Error("assertion failed: " + message);
+  }
+}
+function getValueWithOptions(subDatatype, value, options = {
+  deserializer: deserialize
+}) {
+  if (value === null) {
+    return options?.defaultValue ?? null;
+  }
+  // here is an obj
+  let deserialized = deserialize(value);
+  if (deserialized === undefined || deserialized === null) {
+    return options?.defaultValue ?? null;
+  }
+  if (options?.reconstructor) {
+    // example: // { collection: {reconstructor: LookupMap.reconstruct, value: 'string'}}
+    const collection = options.reconstructor(deserialized);
+    if (subDatatype !== undefined &&
+    // eslint-disable-next-line no-prototype-builtins
+    subDatatype.hasOwnProperty("class") &&
+    // eslint-disable-next-line no-prototype-builtins
+    subDatatype["class"].hasOwnProperty("value")) {
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore
+      collection.subtype = function () {
+        // example: {class: UnorderedMap, value: UnorderedMap}
+        return subDatatype["class"]["value"];
+      };
+    }
+    return collection;
+  }
+  // example: { collection: {reconstructor: LookupMap.reconstruct, value: 'string'}}
+  if (subDatatype !== undefined) {
+    // subtype info is a class constructor, Such as Car
+    if (typeof subDatatype === "function") {
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore
+      deserialized = decodeObj2class(new subDatatype(), deserialized);
+    } else if (typeof subDatatype === "object") {
+      // normal collections of array, map; subtype will be:
+      //  {map: { key: 'string', value: 'string' }} or {array: {value: 'string'}} ..
+      // eslint-disable-next-line no-prototype-builtins
+      if (subDatatype.hasOwnProperty("map")) {
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore
+        for (const mkey in deserialized) {
+          if (subDatatype["map"]["value"] !== "string") {
+            deserialized[mkey] = decodeObj2class(new subDatatype["map"]["value"](), value[mkey]);
+          }
+        }
+        // eslint-disable-next-line no-prototype-builtins
+      } else if (subDatatype.hasOwnProperty("array")) {
+        const new_vec = [];
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore
+        for (const k in deserialized) {
+          if (subDatatype["array"]["value"] !== "string") {
+            new_vec.push(decodeObj2class(new subDatatype["array"]["value"](), value[k]));
+          }
+        }
+        deserialized = new_vec;
+        // eslint-disable-next-line no-prototype-builtins
+      }
+    }
+  }
+  return deserialized;
+}
+function serializeValueWithOptions(value, {
+  serializer
+} = {
+  serializer: serialize
+}) {
+  return serializer(value);
+}
 function serialize(valueToSerialize) {
   return encode(JSON.stringify(valueToSerialize, function (key, value) {
     if (typeof value === "bigint") {
@@ -2435,6 +2519,28 @@ function storageReadRaw(key) {
   return env.read_register(0);
 }
 /**
+ * Checks for the existance of a value under the provided key in NEAR storage.
+ *
+ * @param key - The key to check for in storage.
+ */
+function storageHasKeyRaw(key) {
+  return env.storage_has_key(key) === 1n;
+}
+/**
+ * Checks for the existance of a value under the provided utf-8 string key in NEAR storage.
+ *
+ * @param key - The utf-8 string key to check for in storage.
+ */
+function storageHasKey(key) {
+  return storageHasKeyRaw(encode(key));
+}
+/**
+ * Get the last written or removed value from NEAR storage.
+ */
+function storageGetEvictedRaw() {
+  return env.read_register(EVICTED_REGISTER);
+}
+/**
  * Writes the provided bytes to NEAR storage under the provided key.
  *
  * @param key - The key under which to store the value.
@@ -2442,6 +2548,22 @@ function storageReadRaw(key) {
  */
 function storageWriteRaw(key, value) {
   return env.storage_write(key, value, EVICTED_REGISTER) === 1n;
+}
+/**
+ * Removes the value of the provided key from NEAR storage.
+ *
+ * @param key - The key to be removed.
+ */
+function storageRemoveRaw(key) {
+  return env.storage_remove(key, EVICTED_REGISTER) === 1n;
+}
+/**
+ * Removes the value of the provided utf-8 string key from NEAR storage.
+ *
+ * @param key - The utf-8 string key to be removed.
+ */
+function storageRemove(key) {
+  return storageRemoveRaw(encode(key));
 }
 /**
  * Returns the arguments passed to the current smart contract call.
@@ -2474,6 +2596,533 @@ function promiseBatchActionTransfer(promiseIndex, amount) {
   env.promise_batch_action_transfer(promiseIndex, amount);
 }
 
+class SubType {
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  /* eslint-disable @typescript-eslint/no-empty-function */
+  subtype() {}
+  set_reconstructor(options) {
+    if (options == undefined) {
+      options = {};
+    }
+    const subtype = this.subtype();
+    if (options.reconstructor == undefined && subtype != undefined) {
+      if (
+      // eslint-disable-next-line no-prototype-builtins
+      subtype.hasOwnProperty("class") && typeof subtype.class.reconstruct === "function") {
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore
+        options.reconstructor = subtype.class.reconstruct;
+      } else if (typeof subtype.reconstruct === "function") {
+        options.reconstructor = subtype.reconstruct;
+      }
+    }
+    return options;
+  }
+}
+
+/**
+ * A lookup map that stores data in NEAR storage.
+ */
+class LookupMap extends SubType {
+  /**
+   * @param keyPrefix - The byte prefix to use when storing elements inside this collection.
+   */
+  constructor(keyPrefix) {
+    super();
+    this.keyPrefix = keyPrefix;
+  }
+  /**
+   * Checks whether the collection contains the value.
+   *
+   * @param key - The value for which to check the presence.
+   */
+  containsKey(key) {
+    const storageKey = this.keyPrefix + key;
+    return storageHasKey(storageKey);
+  }
+  /**
+   * Get the data stored at the provided key.
+   *
+   * @param key - The key at which to look for the data.
+   * @param options - Options for retrieving the data.
+   */
+  get(key, options) {
+    const storageKey = this.keyPrefix + key;
+    const value = storageReadRaw(encode(storageKey));
+    if (options == undefined) {
+      options = {};
+    }
+    options = this.set_reconstructor(options);
+    return getValueWithOptions(this.subtype(), value, options);
+  }
+  /**
+   * Removes and retrieves the element with the provided key.
+   *
+   * @param key - The key at which to remove data.
+   * @param options - Options for retrieving the data.
+   */
+  remove(key, options) {
+    const storageKey = this.keyPrefix + key;
+    if (!storageRemove(storageKey)) {
+      return options?.defaultValue ?? null;
+    }
+    const value = storageGetEvictedRaw();
+    return getValueWithOptions(this.subtype(), value, options);
+  }
+  /**
+   * Store a new value at the provided key.
+   *
+   * @param key - The key at which to store in the collection.
+   * @param newValue - The value to store in the collection.
+   * @param options - Options for retrieving and storing the data.
+   */
+  set(key, newValue, options) {
+    const storageKey = this.keyPrefix + key;
+    const storageValue = serializeValueWithOptions(newValue, options);
+    if (!storageWriteRaw(encode(storageKey), storageValue)) {
+      return options?.defaultValue ?? null;
+    }
+    const value = storageGetEvictedRaw();
+    return getValueWithOptions(this.subtype(), value, options);
+  }
+  /**
+   * Extends the current collection with the passed in array of key-value pairs.
+   *
+   * @param keyValuePairs - The key-value pairs to extend the collection with.
+   * @param options - Options for storing the data.
+   */
+  extend(keyValuePairs, options) {
+    for (const [key, value] of keyValuePairs) {
+      this.set(key, value, options);
+    }
+  }
+  /**
+   * Serialize the collection.
+   *
+   * @param options - Options for storing the data.
+   */
+  serialize(options) {
+    return serializeValueWithOptions(this, options);
+  }
+  /**
+   * Converts the deserialized data from storage to a JavaScript instance of the collection.
+   *
+   * @param data - The deserialized data to create an instance from.
+   */
+  static reconstruct(data) {
+    return new LookupMap(data.keyPrefix);
+  }
+}
+
+function indexToKey(prefix, index) {
+  const data = new Uint32Array([index]);
+  const array = new Uint8Array(data.buffer);
+  const key = str(array);
+  return prefix + key;
+}
+/**
+ * An iterable implementation of vector that stores its content on the trie.
+ * Uses the following map: index -> element
+ */
+class Vector extends SubType {
+  /**
+   * @param prefix - The byte prefix to use when storing elements inside this collection.
+   * @param length - The initial length of the collection. By default 0.
+   */
+  constructor(prefix, length = 0) {
+    super();
+    this.prefix = prefix;
+    this.length = length;
+  }
+  /**
+   * Checks whether the collection is empty.
+   */
+  isEmpty() {
+    return this.length === 0;
+  }
+  /**
+   * Get the data stored at the provided index.
+   *
+   * @param index - The index at which to look for the data.
+   * @param options - Options for retrieving the data.
+   */
+  get(index, options) {
+    if (index >= this.length) {
+      return options?.defaultValue ?? null;
+    }
+    const storageKey = indexToKey(this.prefix, index);
+    const value = storageReadRaw(bytes(storageKey));
+    options = this.set_reconstructor(options);
+    return getValueWithOptions(this.subtype(), value, options);
+  }
+  /**
+   * Removes an element from the vector and returns it in serialized form.
+   * The removed element is replaced by the last element of the vector.
+   * Does not preserve ordering, but is `O(1)`.
+   *
+   * @param index - The index at which to remove the element.
+   * @param options - Options for retrieving and storing the data.
+   */
+  swapRemove(index, options) {
+    assert(index < this.length, ERR_INDEX_OUT_OF_BOUNDS);
+    if (index + 1 === this.length) {
+      return this.pop(options);
+    }
+    const key = indexToKey(this.prefix, index);
+    const last = this.pop(options);
+    assert(storageWriteRaw(bytes(key), serializeValueWithOptions(last, options)), ERR_INCONSISTENT_STATE);
+    const value = storageGetEvictedRaw();
+    options = this.set_reconstructor(options);
+    return getValueWithOptions(this.subtype(), value, options);
+  }
+  /**
+   * Adds data to the collection.
+   *
+   * @param element - The data to store.
+   * @param options - Options for storing the data.
+   */
+  push(element, options) {
+    const key = indexToKey(this.prefix, this.length);
+    this.length += 1;
+    storageWriteRaw(bytes(key), serializeValueWithOptions(element, options));
+  }
+  /**
+   * Removes and retrieves the element with the highest index.
+   *
+   * @param options - Options for retrieving the data.
+   */
+  pop(options) {
+    if (this.isEmpty()) {
+      return options?.defaultValue ?? null;
+    }
+    const lastIndex = this.length - 1;
+    const lastKey = indexToKey(this.prefix, lastIndex);
+    this.length -= 1;
+    assert(storageRemoveRaw(bytes(lastKey)), ERR_INCONSISTENT_STATE);
+    const value = storageGetEvictedRaw();
+    return getValueWithOptions(this.subtype(), value, options);
+  }
+  /**
+   * Replaces the data stored at the provided index with the provided data and returns the previously stored data.
+   *
+   * @param index - The index at which to replace the data.
+   * @param element - The data to replace with.
+   * @param options - Options for retrieving and storing the data.
+   */
+  replace(index, element, options) {
+    assert(index < this.length, ERR_INDEX_OUT_OF_BOUNDS);
+    const key = indexToKey(this.prefix, index);
+    assert(storageWriteRaw(bytes(key), serializeValueWithOptions(element, options)), ERR_INCONSISTENT_STATE);
+    const value = storageGetEvictedRaw();
+    options = this.set_reconstructor(options);
+    return getValueWithOptions(this.subtype(), value, options);
+  }
+  /**
+   * Extends the current collection with the passed in array of elements.
+   *
+   * @param elements - The elements to extend the collection with.
+   */
+  extend(elements) {
+    for (const element of elements) {
+      this.push(element);
+    }
+  }
+  [Symbol.iterator]() {
+    return new VectorIterator(this);
+  }
+  /**
+   * Create a iterator on top of the default collection iterator using custom options.
+   *
+   * @param options - Options for retrieving and storing the data.
+   */
+  createIteratorWithOptions(options) {
+    return {
+      [Symbol.iterator]: () => new VectorIterator(this, options)
+    };
+  }
+  /**
+   * Return a JavaScript array of the data stored within the collection.
+   *
+   * @param options - Options for retrieving and storing the data.
+   */
+  toArray(options) {
+    const array = [];
+    const iterator = options ? this.createIteratorWithOptions(options) : this;
+    for (const value of iterator) {
+      array.push(value);
+    }
+    return array;
+  }
+  /**
+   * Remove all of the elements stored within the collection.
+   */
+  clear() {
+    for (let index = 0; index < this.length; index++) {
+      const key = indexToKey(this.prefix, index);
+      storageRemoveRaw(bytes(key));
+    }
+    this.length = 0;
+  }
+  /**
+   * Serialize the collection.
+   *
+   * @param options - Options for storing the data.
+   */
+  serialize(options) {
+    return serializeValueWithOptions(this, options);
+  }
+  /**
+   * Converts the deserialized data from storage to a JavaScript instance of the collection.
+   *
+   * @param data - The deserialized data to create an instance from.
+   */
+  static reconstruct(data) {
+    const vector = new Vector(data.prefix, data.length);
+    return vector;
+  }
+}
+/**
+ * An iterator for the Vector collection.
+ */
+class VectorIterator {
+  /**
+   * @param vector - The vector collection to create an iterator for.
+   * @param options - Options for retrieving and storing data.
+   */
+  constructor(vector, options) {
+    this.vector = vector;
+    this.options = options;
+    this.current = 0;
+  }
+  next() {
+    if (this.current >= this.vector.length) {
+      return {
+        value: null,
+        done: true
+      };
+    }
+    const value = this.vector.get(this.current, this.options);
+    this.current += 1;
+    return {
+      value,
+      done: false
+    };
+  }
+}
+
+/**
+ * An unordered map that stores data in NEAR storage.
+ */
+class UnorderedMap extends SubType {
+  /**
+   * @param prefix - The byte prefix to use when storing elements inside this collection.
+   */
+  constructor(prefix) {
+    super();
+    this.prefix = prefix;
+    this._keys = new Vector(`${prefix}u`); // intentional different prefix with old UnorderedMap
+    this.values = new LookupMap(`${prefix}m`);
+  }
+  /**
+   * The number of elements stored in the collection.
+   */
+  get length() {
+    return this._keys.length;
+  }
+  /**
+   * Checks whether the collection is empty.
+   */
+  isEmpty() {
+    return this._keys.isEmpty();
+  }
+  /**
+   * Get the data stored at the provided key.
+   *
+   * @param key - The key at which to look for the data.
+   * @param options - Options for retrieving the data.
+   */
+  get(key, options) {
+    const valueAndIndex = this.values.get(key);
+    if (valueAndIndex === null) {
+      return options?.defaultValue ?? null;
+    }
+    options = this.set_reconstructor(options);
+    const [value] = valueAndIndex;
+    return getValueWithOptions(this.subtype(), encode(value), options);
+  }
+  /**
+   * Store a new value at the provided key.
+   *
+   * @param key - The key at which to store in the collection.
+   * @param value - The value to store in the collection.
+   * @param options - Options for retrieving and storing the data.
+   */
+  set(key, value, options) {
+    const valueAndIndex = this.values.get(key);
+    const serialized = serializeValueWithOptions(value, options);
+    if (valueAndIndex === null) {
+      const newElementIndex = this.length;
+      this._keys.push(key);
+      this.values.set(key, [decode(serialized), newElementIndex]);
+      return null;
+    }
+    const [oldValue, oldIndex] = valueAndIndex;
+    this.values.set(key, [decode(serialized), oldIndex]);
+    return getValueWithOptions(this.subtype(), encode(oldValue), options);
+  }
+  /**
+   * Removes and retrieves the element with the provided key.
+   *
+   * @param key - The key at which to remove data.
+   * @param options - Options for retrieving the data.
+   */
+  remove(key, options) {
+    const oldValueAndIndex = this.values.remove(key);
+    if (oldValueAndIndex === null) {
+      return options?.defaultValue ?? null;
+    }
+    const [value, index] = oldValueAndIndex;
+    assert(this._keys.swapRemove(index) !== null, ERR_INCONSISTENT_STATE);
+    // the last key is swapped to key[index], the corresponding [value, index] need update
+    if (!this._keys.isEmpty() && index !== this._keys.length) {
+      // if there is still elements and it was not the last element
+      const swappedKey = this._keys.get(index);
+      const swappedValueAndIndex = this.values.get(swappedKey);
+      assert(swappedValueAndIndex !== null, ERR_INCONSISTENT_STATE);
+      this.values.set(swappedKey, [swappedValueAndIndex[0], index]);
+    }
+    return getValueWithOptions(this.subtype(), encode(value), options);
+  }
+  /**
+   * Remove all of the elements stored within the collection.
+   */
+  clear() {
+    for (const key of this._keys) {
+      // Set instead of remove to avoid loading the value from storage.
+      this.values.set(key, null);
+    }
+    this._keys.clear();
+  }
+  [Symbol.iterator]() {
+    return new UnorderedMapIterator(this);
+  }
+  /**
+   * Create a iterator on top of the default collection iterator using custom options.
+   *
+   * @param options - Options for retrieving and storing the data.
+   */
+  createIteratorWithOptions(options) {
+    return {
+      [Symbol.iterator]: () => new UnorderedMapIterator(this, options)
+    };
+  }
+  /**
+   * Return a JavaScript array of the data stored within the collection.
+   *
+   * @param options - Options for retrieving and storing the data.
+   */
+  toArray(options) {
+    const array = [];
+    const iterator = options ? this.createIteratorWithOptions(options) : this;
+    for (const value of iterator) {
+      array.push(value);
+    }
+    return array;
+  }
+  /**
+   * Extends the current collection with the passed in array of key-value pairs.
+   *
+   * @param keyValuePairs - The key-value pairs to extend the collection with.
+   */
+  extend(keyValuePairs) {
+    for (const [key, value] of keyValuePairs) {
+      this.set(key, value);
+    }
+  }
+  /**
+   * Serialize the collection.
+   *
+   * @param options - Options for storing the data.
+   */
+  serialize(options) {
+    return serializeValueWithOptions(this, options);
+  }
+  /**
+   * Converts the deserialized data from storage to a JavaScript instance of the collection.
+   *
+   * @param data - The deserialized data to create an instance from.
+   */
+  static reconstruct(data) {
+    const map = new UnorderedMap(data.prefix);
+    // reconstruct keys Vector
+    map._keys = new Vector(`${data.prefix}u`);
+    map._keys.length = data._keys.length;
+    // reconstruct values LookupMap
+    map.values = new LookupMap(`${data.prefix}m`);
+    return map;
+  }
+  keys({
+    start,
+    limit
+  }) {
+    const ret = [];
+    if (start === undefined) {
+      start = 0;
+    }
+    if (limit == undefined) {
+      limit = this.length - start;
+    }
+    for (let i = start; i < start + limit; i++) {
+      ret.push(this._keys.get(i));
+    }
+    return ret;
+  }
+}
+/**
+ * An iterator for the UnorderedMap collection.
+ */
+class UnorderedMapIterator {
+  /**
+   * @param unorderedMap - The unordered map collection to create an iterator for.
+   * @param options - Options for retrieving and storing data.
+   */
+  constructor(unorderedMap, options) {
+    this.options = options;
+    this.keys = new VectorIterator(unorderedMap._keys);
+    this.map = unorderedMap.values;
+    this.subtype = unorderedMap.subtype;
+  }
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  /* eslint-disable @typescript-eslint/no-empty-function */
+  subtype() {}
+  next() {
+    const key = this.keys.next();
+    if (key.done) {
+      return {
+        value: [key.value, null],
+        done: key.done
+      };
+    }
+    const valueAndIndex = this.map.get(key.value);
+    assert(valueAndIndex !== null, ERR_INCONSISTENT_STATE);
+    return {
+      done: key.done,
+      value: [key.value, getValueWithOptions(this.subtype(), encode(valueAndIndex[0]), this.options)]
+    };
+  }
+}
+
+/**
+ * Tells the SDK to use this function as the initialization function of the contract.
+ *
+ * @param _empty - An empty object.
+ */
+function initialize(_empty) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return function (_target, _key, _descriptor
+  // eslint-disable-next-line @typescript-eslint/no-empty-function
+  ) {};
+}
 /**
  * Tells the SDK to expose this function as a view function.
  *
@@ -2554,10 +3203,34 @@ function NearBindgen({
   };
 }
 
-var _dec, _dec2, _dec3, _dec4, _dec5, _dec6, _dec7, _class, _class2;
-let RentAgreement = (_dec = NearBindgen({}), _dec2 = view(), _dec3 = call({}), _dec4 = call({}), _dec5 = call({}), _dec6 = call({}), _dec7 = call({}), _dec(_class = (_class2 = class RentAgreement {
+var _dec, _dec2, _dec3, _dec4, _dec5, _dec6, _dec7, _dec8, _class, _class2;
+let RentAgreement = (_dec = NearBindgen({}), _dec2 = initialize(), _dec3 = view(), _dec4 = call({}), _dec5 = call({
+  payableFunction: true
+}), _dec6 = call({
+  payableFunction: true
+}), _dec7 = call({}), _dec8 = call({
+  payableFunction: true
+}), _dec(_class = (_class2 = class RentAgreement {
   agreements = []; // Initialize the array
-
+  landlord_id = "";
+  payments = new UnorderedMap('uid-1');
+  rent_deposits = new UnorderedMap('uid-1');
+  static schema = {
+    landlord_id: "string",
+    payments: {
+      class: UnorderedMap,
+      value: "bigint"
+    },
+    rent_deposits: {
+      class: UnorderedMap,
+      value: "bigint"
+    }
+  };
+  init({
+    landlord_id
+  }) {
+    this.landlord_id = landlord_id;
+  }
   get_agreements() {
     return JSON.stringify(this.agreements); // Proper serialization
   }
@@ -2567,21 +3240,36 @@ let RentAgreement = (_dec = NearBindgen({}), _dec2 = view(), _dec3 = call({}), _
     log(`Saving agreement: ${JSON.stringify(agreement)}`);
     this.agreements.push(agreement); // Correctly pushing the new agreement
   }
-  paySecurityDeposit({
+  pay_security_deposit({
     agreementId
   }) {
     const agreement = this.agreements.find(a => a.id === agreementId);
     if (!agreement) {
       throw new Error("Agreement not found.");
     }
-    const depositAmount = BigInt(agreement.securityDeposit); // Convert to BigInt
-    const attachedDeposit$1 = attachedDeposit();
-    if (attachedDeposit$1 !== depositAmount) {
-      throw new Error("Incorrect deposit amount.");
+    const amount = BigInt(agreement.securityDeposit); // Convert to BigInt
+
+    let tenant_id = predecessorAccountId();
+    let depositAmount = attachedDeposit();
+    let total_deposits = this.rent_deposits.get(tenant_id, {
+      defaultValue: BigInt(0)
+    });
+    let toTransfer = depositAmount;
+    if (total_deposits == BigInt(0)) {
+      assert(depositAmount > amount, `Attach at least ${amount} yoctoNEAR`);
+
+      // Subtract the storage cost to the amount to transfer
+      toTransfer -= amount;
     }
-    log(`Security deposit of ${depositAmount} yoctoNEAR paid for agreement ${agreementId}`);
+    total_deposits += depositAmount;
+    this.rent_deposits.set(tenant_id, total_deposits);
+    log(`Security deposit of ${depositAmount} yoctoNEAR paid for agreement ${agreementId}. total deposits add up to ${total_deposits}`);
+    const promise = promiseBatchCreate(this.landlord_id);
+    promiseBatchActionTransfer(promise, toTransfer);
+
+    // return total_deposits.toString()
   }
-  payRent({
+  pay_rent({
     agreementId
   }) {
     const agreement = this.agreements.find(a => a.id === agreementId);
@@ -2589,18 +3277,26 @@ let RentAgreement = (_dec = NearBindgen({}), _dec2 = view(), _dec3 = call({}), _
       throw new Error("Agreement is not active.");
     }
     const rentAmount = BigInt(agreement.monthlyRent); // Convert to BigInt
-    const attachedDeposit$1 = attachedDeposit(); // Get attached NEAR deposit
 
-    if (attachedDeposit$1 !== rentAmount) {
-      throw new Error("Incorrect rent amount.");
+    let tenant_id = predecessorAccountId();
+    let payAmount = attachedDeposit();
+    let total_payments = this.payments.get(tenant_id, {
+      defaultValue: BigInt(0)
+    });
+    let toTransfer = payAmount;
+    if (total_payments == BigInt(0)) {
+      assert(payAmount > rentAmount, `Attach at least ${rentAmount} yoctoNEAR`);
+
+      // Subtract the storage cost to the amount to transfer
+      toTransfer -= rentAmount;
     }
-
-    // Transfer rent to landlord
-    const promise = promiseBatchCreate(agreement.landlordId);
-    promiseBatchActionTransfer(promise, rentAmount);
-    log(`Rent of ${rentAmount} yoctoNEAR paid to ${agreement.landlordId} for agreement ${agreementId}`);
+    total_payments += payAmount;
+    this.payments.set(tenant_id, total_payments);
+    log(`Rent of ${payAmount} yoctoNEAR paid to ${agreement.landlordId} for agreement ${agreementId}`);
+    const promise = promiseBatchCreate(this.landlord_id);
+    promiseBatchActionTransfer(promise, toTransfer);
   }
-  terminateAgreement({
+  terminate_agreement({
     agreementId
   }) {
     const index = this.agreements.findIndex(a => a.id === agreementId);
@@ -2616,7 +3312,7 @@ let RentAgreement = (_dec = NearBindgen({}), _dec2 = view(), _dec3 = call({}), _
 
     log(`Agreement ${agreementId} has been terminated.`);
   }
-  refundDeposit({
+  refund_deposit({
     agreementId
   }) {
     const agreement = this.agreements.find(a => a.id === agreementId);
@@ -2629,15 +3325,28 @@ let RentAgreement = (_dec = NearBindgen({}), _dec2 = view(), _dec3 = call({}), _
     if (signerAccountId() !== agreement.landlordId) {
       throw new Error("Only the landlord can approve refunds.");
     }
-    const depositAmount = BigInt(agreement.securityDeposit);
+    const amount = BigInt(agreement.securityDeposit); // Convert to BigInt
 
-    // Transfer deposit back to tenant
-    const promise = promiseBatchCreate(agreement.tenantId);
-    promiseBatchActionTransfer(promise, depositAmount);
+    let landlord_id = predecessorAccountId();
+    let depositAmount = attachedDeposit();
+    let total_deposits = this.rent_deposits.get(agreement.tenantId, {
+      defaultValue: BigInt(0)
+    });
+    let toTransfer = depositAmount;
+    if (total_deposits == BigInt(0)) {
+      assert(depositAmount > amount, `Attach at least ${amount} yoctoNEAR`);
+
+      // Subtract the storage cost to the amount to transfer
+      toTransfer -= amount;
+    }
+    total_deposits += depositAmount;
+    this.rent_deposits.set(landlord_id, total_deposits);
     log(`Refunded security deposit of ${depositAmount} yoctoNEAR to ${agreement.tenantId}`);
+    const promise = promiseBatchCreate(agreement.tenantId);
+    promiseBatchActionTransfer(promise, toTransfer);
   }
-}, _applyDecoratedDescriptor(_class2.prototype, "get_agreements", [_dec2], Object.getOwnPropertyDescriptor(_class2.prototype, "get_agreements"), _class2.prototype), _applyDecoratedDescriptor(_class2.prototype, "set_agreement", [_dec3], Object.getOwnPropertyDescriptor(_class2.prototype, "set_agreement"), _class2.prototype), _applyDecoratedDescriptor(_class2.prototype, "paySecurityDeposit", [_dec4], Object.getOwnPropertyDescriptor(_class2.prototype, "paySecurityDeposit"), _class2.prototype), _applyDecoratedDescriptor(_class2.prototype, "payRent", [_dec5], Object.getOwnPropertyDescriptor(_class2.prototype, "payRent"), _class2.prototype), _applyDecoratedDescriptor(_class2.prototype, "terminateAgreement", [_dec6], Object.getOwnPropertyDescriptor(_class2.prototype, "terminateAgreement"), _class2.prototype), _applyDecoratedDescriptor(_class2.prototype, "refundDeposit", [_dec7], Object.getOwnPropertyDescriptor(_class2.prototype, "refundDeposit"), _class2.prototype), _class2)) || _class);
-function refundDeposit() {
+}, _applyDecoratedDescriptor(_class2.prototype, "init", [_dec2], Object.getOwnPropertyDescriptor(_class2.prototype, "init"), _class2.prototype), _applyDecoratedDescriptor(_class2.prototype, "get_agreements", [_dec3], Object.getOwnPropertyDescriptor(_class2.prototype, "get_agreements"), _class2.prototype), _applyDecoratedDescriptor(_class2.prototype, "set_agreement", [_dec4], Object.getOwnPropertyDescriptor(_class2.prototype, "set_agreement"), _class2.prototype), _applyDecoratedDescriptor(_class2.prototype, "pay_security_deposit", [_dec5], Object.getOwnPropertyDescriptor(_class2.prototype, "pay_security_deposit"), _class2.prototype), _applyDecoratedDescriptor(_class2.prototype, "pay_rent", [_dec6], Object.getOwnPropertyDescriptor(_class2.prototype, "pay_rent"), _class2.prototype), _applyDecoratedDescriptor(_class2.prototype, "terminate_agreement", [_dec7], Object.getOwnPropertyDescriptor(_class2.prototype, "terminate_agreement"), _class2.prototype), _applyDecoratedDescriptor(_class2.prototype, "refund_deposit", [_dec8], Object.getOwnPropertyDescriptor(_class2.prototype, "refund_deposit"), _class2.prototype), _class2)) || _class);
+function refund_deposit() {
   const _state = RentAgreement._getState();
   if (!_state && RentAgreement._requireInit()) {
     throw new Error("Contract must be initialized");
@@ -2647,11 +3356,11 @@ function refundDeposit() {
     RentAgreement._reconstruct(_contract, _state);
   }
   const _args = RentAgreement._getArgs();
-  const _result = _contract.refundDeposit(_args);
+  const _result = _contract.refund_deposit(_args);
   RentAgreement._saveToStorage(_contract);
   if (_result !== undefined) if (_result && _result.constructor && _result.constructor.name === "NearPromise") _result.onReturn();else env.value_return(RentAgreement._serialize(_result, true));
 }
-function terminateAgreement() {
+function terminate_agreement() {
   const _state = RentAgreement._getState();
   if (!_state && RentAgreement._requireInit()) {
     throw new Error("Contract must be initialized");
@@ -2661,11 +3370,11 @@ function terminateAgreement() {
     RentAgreement._reconstruct(_contract, _state);
   }
   const _args = RentAgreement._getArgs();
-  const _result = _contract.terminateAgreement(_args);
+  const _result = _contract.terminate_agreement(_args);
   RentAgreement._saveToStorage(_contract);
   if (_result !== undefined) if (_result && _result.constructor && _result.constructor.name === "NearPromise") _result.onReturn();else env.value_return(RentAgreement._serialize(_result, true));
 }
-function payRent() {
+function pay_rent() {
   const _state = RentAgreement._getState();
   if (!_state && RentAgreement._requireInit()) {
     throw new Error("Contract must be initialized");
@@ -2675,11 +3384,11 @@ function payRent() {
     RentAgreement._reconstruct(_contract, _state);
   }
   const _args = RentAgreement._getArgs();
-  const _result = _contract.payRent(_args);
+  const _result = _contract.pay_rent(_args);
   RentAgreement._saveToStorage(_contract);
   if (_result !== undefined) if (_result && _result.constructor && _result.constructor.name === "NearPromise") _result.onReturn();else env.value_return(RentAgreement._serialize(_result, true));
 }
-function paySecurityDeposit() {
+function pay_security_deposit() {
   const _state = RentAgreement._getState();
   if (!_state && RentAgreement._requireInit()) {
     throw new Error("Contract must be initialized");
@@ -2689,7 +3398,7 @@ function paySecurityDeposit() {
     RentAgreement._reconstruct(_contract, _state);
   }
   const _args = RentAgreement._getArgs();
-  const _result = _contract.paySecurityDeposit(_args);
+  const _result = _contract.pay_security_deposit(_args);
   RentAgreement._saveToStorage(_contract);
   if (_result !== undefined) if (_result && _result.constructor && _result.constructor.name === "NearPromise") _result.onReturn();else env.value_return(RentAgreement._serialize(_result, true));
 }
@@ -2720,6 +3429,17 @@ function get_agreements() {
   const _result = _contract.get_agreements(_args);
   if (_result !== undefined) if (_result && _result.constructor && _result.constructor.name === "NearPromise") _result.onReturn();else env.value_return(RentAgreement._serialize(_result, true));
 }
+function init() {
+  const _state = RentAgreement._getState();
+  if (_state) {
+    throw new Error("Contract already initialized");
+  }
+  const _contract = RentAgreement._create();
+  const _args = RentAgreement._getArgs();
+  const _result = _contract.init(_args);
+  RentAgreement._saveToStorage(_contract);
+  if (_result !== undefined) if (_result && _result.constructor && _result.constructor.name === "NearPromise") _result.onReturn();else env.value_return(RentAgreement._serialize(_result, true));
+}
 
-export { get_agreements, payRent, paySecurityDeposit, refundDeposit, set_agreement, terminateAgreement };
+export { get_agreements, init, pay_rent, pay_security_deposit, refund_deposit, set_agreement, terminate_agreement };
 //# sourceMappingURL=rems_near.js.map
