@@ -18,7 +18,7 @@ interface Agreement {
 @NearBindgen({})
 class RentAgreement {
   agreements: Agreement[] = []; // Initialize the array
-  landlord_id: string = "";
+  landlord_id: string = "landlord.testnet";
   payments = new UnorderedMap<bigint>('uid-1');
   rent_deposits = new UnorderedMap<bigint>('uid-1');
 
@@ -60,8 +60,7 @@ class RentAgreement {
     let toTransfer = depositAmount;
 
     if (total_deposits == BigInt(0)) {
-      assert(depositAmount > amount, `Attach at least ${amount} yoctoNEAR`);
-
+      assert(depositAmount >= amount, `Attach at least ${amount} yoctoNEAR`);
       // Subtract the storage cost to the amount to transfer
       toTransfer -= amount
     }
